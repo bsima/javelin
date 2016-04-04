@@ -7,7 +7,7 @@
                     [tailrecursion/cljs-priority-map "1.0.3"]
                     [org.clojure/data.priority-map   "0.0.2"]
                     [riddley                         "0.1.6"]]
-  :resource-paths #{"src"})
+  :resource-paths #{"src" "test"})
 
 (require
   '[clojure.java.io  :as io]

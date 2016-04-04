@@ -11,13 +11,12 @@
   (:require
     [riddley.compiler           :refer [locals]]
     [riddley.walk               :refer [walk-exprs]]
-    [clojure.data.priority-map  :refer [priority-map]]
-    [javelin.protocols :refer [ICell]]))
+    [clojure.data.priority-map  :refer [priority-map]]))
 
 (declare cell? cell input? lens? notify-watches)
 
-(def ^:private ^:dynamic *tx* nil)
-(def ^:private last-rank (atom 0))
+(def ^:private ^:dynamic *tx*      nil)
+(def ^:private           last-rank (atom 0))
 
 (defn bf-seq [branch? children root]
   (let [walk (fn walk [queue]
@@ -46,16 +45,16 @@
 
 
 ;; Clojure doesn't have ClojureScript's equivalent of cljs.core.IWatchable,
-;;  instead it has IRef, which only specifies add-watch and remove-watch. Instead
-;;  of re-implementing IWatchable, we just implement the one function we need.
-;;  This should be removed if Clojure ever gets an IWatchable protocol.
+;; instead it has IRef, which only specifies add-watch and remove-watch. Instead
+;; of re-implementing IWatchable, we just implement the one function we need.
+;; This should be removed if Clojure ever gets an IWatchable protocol.
 (defprotocol INotifyWatches
   (notify-watches [this oldval newval] "Calls all watchers with this, oldval and newval."))
 
 ;; Clojure deftypes have immutable fields by default, whereas the opposite is
 ;; true for ClojureScript. As such, we have to manually implement the setter for
 ;; the cell's sources and watches. The cleanest way to do this I've found is via
-;; a protocol.
+;; the following two protocols.
 (defprotocol IMutableSources
   (sources [this] [this newval] "With one argument, returns the formula cell's
   sources. With two arguments, sets the sources to newval and returns newval."))
@@ -63,11 +62,21 @@
 (defprotocol IMutableWatches
   (watches [this] [this k] [this k f]))
 
-(deftype Cell [metadata state rank prev sinks thunk update
+(defprotocol ICell
+  "Misc cell protocol things"
+  (cell-state [this] "Returns the current state of the cell."))
+
+(deftype Cell [^:volatile-mutable metadata
+               ^:volatile-mutable state
+               ^:volatile-mutable rank
+               ^:volatile-mutable prev
+               ^:volatile-mutable sinks
+               ^:volatile-mutable thunk
+               ^:volatile-mutable update
                ^:volatile-mutable sources
                ^:volatile-mutable watches]
   Object
-  (toString [this] (pr-str "#<Cell: " (.state this) ">"))
+  (toString [this] (pr-str "#<Cell: " (.state this) \>))
 
   IMutableSources
   (sources [this] sources)
@@ -83,8 +92,10 @@
   (deref [this] (.state this))
 
   clojure.lang.IRef
-  (addWatch      [this k f] (set! watches (assoc watches k f)))
-  (removeWatch   [this k]   (set! watches (dissoc watches k)))
+  (addWatch      [this k f]
+    (println this k f)
+    (set! (.watches this) (assoc watches k f)))
+  (removeWatch   [this k]   (set! (.watches this) (dissoc watches k)))
 
   INotifyWatches
   (notify-watches [this o n] (doseq [[key f] watches] (f key this o n)))
@@ -100,8 +111,8 @@
   (swap [this f a b]    (reset! this (f (.state this) a b)))
   (swap [this f a b xs] (reset! this (apply f (.state this) a b xs)))
 
-
-  )
+  ICell
+  (cell-state [this] (.state this)))
 
 (defn destroy-cell! [^Cell this]
   (let [srcs (.sources this)]
@@ -125,6 +136,8 @@
     (.thunk this (if f thunk #(deref this)))
     (doto this propagate!)))
 
+
+
 (defn cell?      [c]      (when (= (type c) Cell) c))
 (defn formula?   [c]      (when (and (cell? c) (.thunk c)) c))
 (defn lens?      [c]      (when (and (cell? c) (.update c)) c))
@@ -137,7 +150,7 @@
   ([x meta] (set-formula! (->Cell meta x (next-rank) x [] #{} nil {} nil))))
 
 (defmethod print-method Cell [o ^java.io.Writer w]
-  (.write w (str "#<Cell: " (pr-str (.state o) ">"))))
+  (.write w (str "#<Cell: " (pr-str (cell-state o) '>))))
 
 (def specials (into #{} (keys (. clojure.lang.Compiler specials))))
 
